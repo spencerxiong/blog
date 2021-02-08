@@ -170,9 +170,6 @@ function upload(file) {
         var json = JSON.parse(xhr.responseText)
         log.innerHTML = `上传成功，返回地址是:${json.content.download_url}`        
     }
-    xhr.onerror = function () {
-        log.innerHTML = `上传失败`
-    }
     // 设置请求头，github要求的
     xhr.setRequestHeader("Accept", "application/vnd.github.v3+json");
     xhr.setRequestHeader("Authorization", "token " + token);
