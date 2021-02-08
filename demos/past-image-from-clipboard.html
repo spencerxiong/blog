@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>paste</title>
+    <style>
+        .preview {
+            position: relative;
+            display: inline-block;
+        }
+        .preview img{
+            position: relative;
+            display: block;
+            z-index:0;
+            max-width: 600px;
+            max-height:600px;
+        }
+        .log{
+            font-size: 16px;
+            line-height: 24px;
+        }
+        .progress{
+            position: absolute;
+            left:0;
+            bottom:0;
+            z-index: 2;
+            width: 100%;
+            height: 5px;
+            background-color: gray;
+        }
+        .progress-bar{
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 0;
+            height:100%;
+            background-color: blue;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="preview">
+    <div class="preview-cover"></div>    
+    <div class="progress">
+        <div class="progress-bar">
+        </div>
+    </div>
+</div>
+<div class="log"></div>
+
+<div class="source">
+    <p>鼠标在下图右键-复制，然后在当前页面ctrl-v粘贴</p>
+    <img src="https://raw.githubusercontent.com/spencerxiong/blog/main/assets/1612758648356.png">    
+</div>
+
+
+<script type="text/javascript">
+
+
+// 监听paste事件
+// 获取剪贴板图片数据
+// 将获取到的图片数据转为base64插入页面预览
+// 发起ajax请求，上传图片，监听ajax的事件，获取上传进度，结果
+// {
+//   "message": "提交说明",
+//   "content": "base64编码的文件内容",
+// }
+
+// 监听paste事件，在事件处理函数中通过事件对象中的clipboardData获取剪贴板上的数据
+// clipboardData对象本质上是一个DataTransfer对象，数据保存在它的items属性中，
+// 而items属性又是一个DataTransferItemList类数组，里面保存着DataTransferItem对象，DataTransferItem并不能直接查看或上传。
+// 通过DataTransferItem的type属性可以拿到具体的文件类型、通过getAsFile方法可以获取到一个File对象（即二进制数据）
+// File对象继承自Blob对象，于是可以使用对象URL来显示粘贴的图片，以作为本地预览
+
+document.addEventListener('paste', function (event) {
+    // 获取剪贴板数据
+    // clipboardData是DataTransfer对象，
+    // 数据保存在clipboardData.items属性中    
+    var items = event.clipboardData && event.clipboardData.items;
+    // clipboardData.items是DataTransferItemList对象（类数组）
+    // DataTransferItemList中保存的是DataTransferItem对象
+
+    // 解析数据拿到图片文件
+    var file = null;
+    for(var i=0;i<items.length;i++){
+        var item=items[i];
+        if(item.type.indexOf('image')!==-1){
+            file=item.getAsFile() // 返回File对象
+        }
+    }
+
+    // dataURL方式预览
+    fileToBase64(file).then(function (file) { 
+        createPreview(file)
+        return file;
+    }).then(function(file){
+        upload(file)
+    })
+})
+
+// 用对象URL显示预览图片
+// function createObjURLPreview(file) {
+//     var img = document.createElement('img');
+//     img.src = window.URL.createObjectURL(file);
+//     img.onload = function () {
+//         window.URL.revokeObjectURL(this.src)
+//     }
+//     return img;
+// }
+
+// file对象转base64
+function fileToBase64(file) {
+    return new Promise(resolve => {
+        var reader = new FileReader();
+        reader.onload = function (event) {
+            // resolve(event.target.result)
+            resolve({
+                name:file.name,
+                base64:event.target.result
+            })
+        }
+        reader.readAsDataURL(file)
+    });
+}
+// 用dataURL（base64）显示预览图片
+function createPreview(file) {
+    var preview = document.querySelector('.preview');
+    var oldImg=preview.querySelector('img');
+    if(oldImg){
+       oldImg.setAttribute('src',file.base64)
+    } else {
+        var img = document.createElement('img');
+        img.setAttribute('src', file.base64);        
+        preview.appendChild(img)
+    }    
+}
+// 上传
+function upload(file) {
+    // 生成随机的名字
+    var fileName = `${Date.now()}.${file.name.split('.')[1]}`;
+    // 去掉前缀，上传github的不要前缀
+    var fileContent = file.base64.replace(/^data:image\/\w+;base64,/, '')
+
+    var token = 'token'
+    var user = 'name';
+    // 上传github需要去掉前缀的base64
+    // toke、user、repository、path都根据自己创建的来
+    var api = `https://api.github.com/repos/${user}/${repository}/contents/${path}/${fileName}`
+    let data = {
+        message: "upload img", 
+        content: fileContent 
+    };
+    var log=document.querySelector('.log');
+    var progressBar=document.querySelector('.progress-bar')
+    var xhr = new XMLHttpRequest();
+    xhr.open('PUT', api, true)
+    // 上传进度
+    // 上传进度是在xhr.upload属性上的
+    xhr.upload.onprogress=function(event){
+        var progress=`${Math.round(event.loaded*100 / event.total)}%`;
+        console.log(progress)
+        progressBar.style.width=progress;
+        log.innerHTML = `正在上传，进度：${progress}`;
+    }
+    xhr.onload = function () {
+        var json = JSON.parse(xhr.responseText)
+        log.innerHTML = `上传成功，返回地址是:${json.content.download_url}`        
+    }
+    xhr.onerror = function () {
+        log.innerHTML = `上传失败`
+    }
+    // 设置请求头，github要求的
+    xhr.setRequestHeader("Accept", "application/vnd.github.v3+json");
+    xhr.setRequestHeader("Authorization", "token " + token);
+    xhr.send(JSON.stringify(data))
+}
+    </script>
+</body>
+
+</html>
