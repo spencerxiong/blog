@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<title>drag and drop file upload</title>
+<meta name="description" content="">
+<meta name="keywords" content="">
+<style type="text/css">
+	*{
+		margin:0;
+		padding:0;
+	}
+	.uploader{
+		margin:10px;
+		padding:10px;
+		border:2px dashed #999;
+	}
+	.uploader.highlight{
+		border-color: lightskyblue;
+	}
+	.uploader input,
+	.uploader p{
+		margin: 10px;
+	}
+	.previewList{
+		display:flex;
+	}
+	.previewList li{
+		position: relative;
+		list-style: none;
+		margin:10px;
+		border:1px solid rgba(0,0,0,0.5)
+	}
+	.previewList li img{
+		display: block;
+		height: 150px;
+	}
+	.progress{
+		position: absolute;
+		left: 0;
+		bottom:0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0,0,0,0.5);
+	}
+
+
+</style>
+</head>
+<body>
+
+<div class="uploader">
+	<input type="file" name="" class="fileInput" multiple accept="image/*">
+	<p>或拖拽文件到该区域上传</p>
+	<ul class="previewList">
+		<!-- 放置缩略图 -->
+	</ul>
+</div>
+
+<script type="text/javascript">
+	// 从电脑上往浏览器里面拖动文件，drag、dragstart、dragexit、dragend事件都不会触发
+	// 在页面上监听dragover、drop事件，并阻止默认动作，否则释放鼠标的时候浏览器会打开新页面显示图片
+	document.addEventListener('dragover', function (event) {
+		event.preventDefault();
+	});
+	document.addEventListener('drop', function (event) {
+		event.preventDefault();
+	});
+
+	// 监听拖拽上传的目标区域，只在该区域处理文件上传 
+	var uploader=document.querySelector('.uploader')	
+	uploader.addEventListener('drop',function(event){
+		event.preventDefault()
+		var files=event.dataTransfer.files;
+		// console.log(event.dataTransfer.files)
+		// console.log(event.dataTransfer.items[0].getAsFile())
+		// 从dataTransfer.files对象中获取文件，它是一个文件列表
+		// dataTransfer.items其实也保存的有文件数据，不过是dataTransferItem对象，还要调用getAsFile进行转换
+		uploadFiles(files)
+		
+	});
+
+	// 进入目标区域的时候调整样式
+	uploader.addEventListener('dragenter',updateUploaderStyle,false)
+	uploader.addEventListener('dragover',updateUploaderStyle,false)
+	function updateUploaderStyle(event){
+		var targetClass=event.target.classList;
+		if(targetClass.contains('highlight')){
+			return
+		} else {
+			targetClass.add('highlight')
+		}
+	}
+
+	// 拖到目标区域之后释放鼠标还原样式
+	uploader.addEventListener('dragleave',resetUploaderStyle,false)
+	uploader.addEventListener('drop',resetUploaderStyle,false)
+	function resetUploaderStyle(event){
+		var targetClass=event.target.classList;
+		if(targetClass.contains('highlight')){
+			targetClass.remove('highlight')
+		}	
+	}
+
+	// 原生文件选择输入框
+	var fileInput=document.querySelector('.fileInput');
+	fileInput.addEventListener('change',function(event){
+		// console.log(event.target.files)
+		// 文件输入框本身又一个files属性，也是一个类数组，里面保存的就是File对象
+		// 所以直接调用uploadFiles即可
+		uploadFiles(event.target.files)
+	})
+
+
+	// 上传（需要支持多图上传）
+	function uploadFiles(files){
+		// files是一个类数组，转为数组
+		var filesArr=Array.prototype.slice.call(files);
+		// 过滤出图片类型
+		var imgsArr=filesArr.filter(function(item){
+			return item.type.indexOf('image')!==-1
+		})
+		var previewList = document.querySelector('.previewList');
+		// 遍历保存的图片文件数组，对每张图片创建预览图、上传服务器
+		imgsArr.forEach(function(file){
+			fileToBase64(file).then(function(file){
+				// 创建预览
+				var previewItem=createPreview(file)
+				previewList.appendChild(previewItem)	
+				var obj={
+					name:file.name,
+					base64:file.base64,
+					progressbar:previewItem.progress 
+					// 创建预览的时候将每个预览图的进度条保存下来以便上传的时候更新进度
+				}
+				upload(obj)
+			})
+		})
+	}
+	// File类型转DataURL
+	function fileToBase64(file){
+		return new Promise(function(resolve){
+			var reader=new FileReader();
+			reader.readAsDataURL(file);	
+			reader.onload=function(event){
+				resolve({
+					name:file.name,
+					base64:event.target.result
+				})
+			}
+		})
+	}
+
+	// 创建缩略图
+	function createPreview(file){
+		var previewItem=document.createElement('li')
+		// 图片
+		var img = document.createElement('img');
+		img.setAttribute('src', file.base64);
+		// 进度条	
+		var progressBar=document.createElement('div')
+		progressBar.setAttribute('class','progress')		
+		previewItem.appendChild(img);
+		previewItem.appendChild(progressBar);
+		previewItem.progress=progressBar // 进度条作为预览图的一个属性保存下来
+		return previewItem;
+	}
+
+	// 上传图片
+	// 图片上传服务器根据自己的实际情况转换文件编码
+	function upload(file){
+		var fileContent=file.base64.replace(/^data:image\/\w+;base64,/,'');
+
+		var toke='your token';
+		var name='your name'
+		// 上传github需要去掉前缀的base64
+		// toke、user、repository、path都根据自己创建的来
+		var api = `https://api.github.com/repos/${user}/${repository}/contents/${path}/${file.name}`
+
+		let data = {
+			message: "upload img", 
+			content: fileContent 
+		};
+
+		var xhr = new XMLHttpRequest();
+		xhr.open('PUT', api, true)
+		// 上传进度
+		// 上传进度是在xhr.upload属性上的
+		xhr.upload.onprogress=function(event){
+			var progress=Math.round(event.loaded*100 / event.total);			
+			// 更新进度条
+			file.progressbar.style.height=`${100-progress}%`
+		}
+		xhr.onload = function () {
+			var json = JSON.parse(xhr.responseText)
+			console.log(`上传成功，返回地址是:${json.content.download_url}`)       
+		}
+		// 设置请求头，github要求的
+		xhr.setRequestHeader("Accept", "application/vnd.github.v3+json");
+		xhr.setRequestHeader("Authorization", "token " + token);
+		xhr.send(JSON.stringify(data))		
+	}
+
+
+
+</script>
+    
+</body>
+</html>
